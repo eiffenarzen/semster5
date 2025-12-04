@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deteksi Objek Real-Time - TensorFlow.js</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    
+    <style>
+        body { margin: 0; display: flex; flex-direction: column; align-items: center; font-family: sans-serif; }
+        /* Mengatur posisi canvas di atas video */
+        #container { position: relative; }
+        #canvas { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            border: 2px solid #333; /* Untuk visualisasi batas area deteksi */
+        }
+        #status { margin-top: 10px; font-weight: bold; color: #007bff; }
+    </style>
+</head>
+<body>
+
+    <h1>Deteksi Objek Real-Time</h1>
+    
+    <div id="container">
+        <video id="webcam" autoplay muted playsinline></video>
+        <canvas id="canvas"></canvas>
+    </div>
+    
+    <p id="status">Memuat model COCO-SSD...</p>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const statusElement = document.getElementById('status');
+        let model = undefined;
+
+        /**
+         * 1. Mulai Akses Kamera
+         */
+        async function setupWebcam() {
+            return new Promise((resolve, reject) => {
+                const navigatorAny = navigator;
+                navigator.getUserMedia = navigator.getUserMedia ||
+                    navigatorAny.webkitGetUserMedia || navigatorAny.mozGetUserMedia ||
+                    navigatorAny.msGetUserMedia;
+                
+                if (navigator.getUserMedia) {
+                    navigator.getUserMedia(
+                        { video: true },
+                        stream => {
+                            video.srcObject = stream;
+                            video.addEventListener('loadeddata', () => resolve(), false);
+                        },
+                        error => reject(error)
+                    );
+                } else {
+                    reject(new Error("Browser tidak mendukung navigator.getUserMedia."));
+                }
+            });
+        }
+
+        /**
+         * 2. Loop Deteksi Utama
+         */
+        async function detectFrame() {
+            // Tunggu hingga video siap
+            if (video.readyState < 2) {
+                requestAnimationFrame(detectFrame);
+                return;
+            }
+            
+            // Jalankan deteksi
+            const predictions = await model.detect(video);
+            
+            // Gambar kotak pembatas
+            drawBoundingBoxes(predictions);
+
+            // Ulangi proses pada frame berikutnya
+            requestAnimationFrame(detectFrame);
+        }
+
+        /**
+         * 3. Menggambar Hasil Deteksi (Kotak dan Label)
+         */
+        function drawBoundingBoxes(predictions) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.font = '16px Arial';
+            ctx.lineWidth = 2;
+            
+            predictions.forEach(prediction => {
+                const [x, y, width, height] = prediction.bbox;
+                
+                // Gambar kotak pembatas (Bounding Box)
+                ctx.strokeStyle = '#00FFFF'; // Warna Cyan
+                ctx.strokeRect(x, y, width, height);
+                
+                // Gambar latar belakang teks
+                ctx.fillStyle = '#00FFFF';
+                const text = `${prediction.class} (${Math.round(prediction.score * 100)}%)`;
+                const textWidth = ctx.measureText(text).width;
+                ctx.fillRect(x, y, textWidth + 8, 20); // Kotak latar belakang
+                
+                // Gambar teks
+                ctx.fillStyle = '#000000'; // Warna Hitam
+                ctx.fillText(text, x + 4, y + 15);
+            });
+        }
+
+        /**
+         * 4. Fungsi Utama untuk Memulai Aplikasi
+         */
+        async function startApp() {
+            try {
+                // Muat model COCO-SSD
+                model = await cocoSsd.load();
+                statusElement.textContent = 'Model berhasil dimuat. Meminta akses kamera...';
+
+                // Akses dan setel video
+                await setupWebcam();
+                
+                // Atur ukuran canvas sesuai video
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                video.width = video.videoWidth;
+                video.height = video.videoHeight;
+
+                statusElement.textContent = 'Deteksi dimulai...';
+                
+                // Mulai loop deteksi
+                detectFrame();
+                
+            } catch (error) {
+                statusElement.textContent = `ERROR: ${error.message}. Pastikan Anda mengizinkan akses kamera.`;
+                console.error(error);
+            }
+        }
+
+        startApp();
+    </script>
+
+</body>
+</html>
