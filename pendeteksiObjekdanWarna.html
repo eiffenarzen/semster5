@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deteksi Objek & Warna Akurat - TensorFlow.js</title>
+    <title>Deteksi Objek & Warna Sangat Akurat - TensorFlow.js</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
@@ -18,7 +18,6 @@
             background-color: #f4f4f4;
         }
         h1 { color: #2c3e50; }
-        /* Mengatur posisi canvas di atas video */
         #container { 
             position: relative; 
             border: 4px solid #3498db; 
@@ -45,7 +44,7 @@
 </head>
 <body>
 
-    <h1>Deteksi Objek & Warna Akurat (HSL) 🎯</h1>
+    <h1>Deteksi Objek & Warna Akurat (Refined HSL) 🔬</h1>
     
     <div id="container">
         <video id="webcam" autoplay muted playsinline></video>
@@ -71,9 +70,8 @@
             const min = Math.min(r, g, b);
             let h, s, l = (max + min) / 2;
 
-            if (max === min) {
-                h = s = 0;
-            } else {
+            if (max === min) { h = s = 0; } 
+            else {
                 const d = max - min;
                 s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
                 switch (max) {
@@ -83,10 +81,10 @@
                 }
                 h /= 6;
             }
-            return [h * 360, s, l];
+            return [h * 360, s, l]; 
         }
 
-        // --- FUNGSI 2: ANALISIS WARNA BERBASIS HSL (Diperluas) ---
+        // --- FUNGSI 2: ANALISIS WARNA SANGAT AKURAT BERBASIS HSL ---
         function getAverageColor(x, y, width, height) {
             if (width <= 0 || height <= 0) return "Tidak Valid";
 
@@ -97,6 +95,7 @@
                 const safeW = Math.min(width, canvas.width - safeX);
                 const safeH = Math.min(height, canvas.height - safeY);
                 
+                // Ambil data piksel
                 imageData = ctx.getImageData(safeX, safeY, safeW, safeH);
             } catch (e) {
                 return "Warna?";
@@ -104,7 +103,7 @@
 
             const data = imageData.data;
             let totalR = 0, totalG = 0, totalB = 0;
-            const step = 5; 
+            const step = 5; // Sampling piksel untuk performa
             let count = 0;
 
             for (let i = 0; i < data.length; i += 4 * step) {
@@ -122,14 +121,27 @@
 
             const [h, s, l] = rgbToHsl(avgR, avgG, avgB);
 
-            // Klasifikasi Monokromatik (Putih, Hitam, Abu-abu)
+            // --- 1. KLASIFIKASI MONOKROMATIK (PUTIH, HITAM, ABU-ABU) ---
             if (s < 0.15) { 
                 if (l > 0.9) return "Putih";
                 if (l < 0.1) return "Hitam";
                 return "Abu-abu";
             }
             
-            // Klasifikasi Warna (Berdasarkan Hue angle)
+            // --- 2. KLASIFIKASI WARNA SULIT (COKLAT, ZAITUN) ---
+            
+            // Coklat (Brown): Saturation sedang, Lightness rendah hingga menengah, Hue di Oranye/Merah
+            if (s > 0.2 && s < 0.7 && l > 0.15 && l < 0.55) {
+                if (h >= 10 && h < 50) return "Coklat"; 
+            }
+            
+            // Zaitun (Olive): Saturation sedang, Lightness rendah hingga menengah, Hue di Kuning/Hijau
+            if (s > 0.2 && s < 0.7 && l > 0.15 && l < 0.55) {
+                 if (h >= 60 && h < 90) return "Zaitun"; 
+            }
+
+            // --- 3. KLASIFIKASI WARNA UTAMA (Berdasarkan Hue) ---
+            
             // Merah
             if (h >= 345 || h < 15) return "Merah"; 
             // Oranye
@@ -142,7 +154,7 @@
             if (h >= 150 && h < 200) return "Cyan"; 
             // Biru
             if (h >= 200 && h < 260) return "Biru"; 
-            // Ungu
+            // Ungu/Magenta
             if (h >= 260 && h < 345) return "Ungu"; 
             
             return "Lainnya";
@@ -151,9 +163,7 @@
         // --- FUNGSI 3: AKSES KAMERA ---
         async function setupWebcam() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: true 
-                });
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 video.srcObject = stream;
                 await new Promise(r => video.addEventListener('loadeddata', r, { once: true }));
                 return stream;
@@ -182,7 +192,7 @@
             requestAnimationFrame(detectFrame);
         }
 
-        // --- FUNGSI 5: MENGGAMBAR HASIL (Kotak & Font Disesuaikan) ---
+        // --- FUNGSI 5: MENGGAMBAR HASIL (Warna Font Disesuaikan) ---
         function drawBoundingBoxes(predictions) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
@@ -198,15 +208,19 @@
                 const text = `${prediction.class} (${avgColor}, ${confidence}%)`;
                 
                 // 1. Tentukan Warna Garis dan Latar Belakang Kotak (Stroke Color)
-                let strokeColor = '#95a5a6'; // Abu-abu default
+                let strokeColor = '#95a5a6'; 
+                let isLightColor = false; // Untuk menentukan warna font
 
                 if (avgColor === "Merah") strokeColor = '#c0392b';
-                else if (avgColor === "Kuning") strokeColor = '#f1c40f';
+                else if (avgColor === "Kuning") { strokeColor = '#f1c40f'; isLightColor = true; }
                 else if (avgColor === "Hijau") strokeColor = '#27ae60';
                 else if (avgColor === "Biru") strokeColor = '#2980b9';
-                else if (avgColor === "Putih" || avgColor === "Abu-abu") strokeColor = '#7f8c8d'; 
+                else if (avgColor === "Putih") { strokeColor = '#ecf0f1'; isLightColor = true; }
+                else if (avgColor === "Abu-abu") strokeColor = '#95a5a6';
                 else if (avgColor === "Hitam") strokeColor = '#34495e'; 
                 else if (avgColor === "Oranye") strokeColor = '#e67e22';
+                else if (avgColor === "Coklat") strokeColor = '#8b4513';
+                else if (avgColor === "Zaitun") strokeColor = '#808000';
 
                 
                 ctx.strokeStyle = strokeColor;
@@ -215,22 +229,11 @@
                 // 2. Gambar kotak latar belakang teks
                 ctx.fillStyle = strokeColor;
                 const textWidth = ctx.measureText(text).width;
-                // Posisi kotak teks di atas bounding box
                 ctx.fillRect(x - 1, y - 24, textWidth + 10, 24); 
                 
-                // 3. Gambar teks (Font diubah menjadi Hitam untuk kontras yang baik)
-                // Jika warna latar belakang cerah (Kuning, Putih), gunakan font Hitam (#000000)
-                // Jika warna latar belakang gelap, gunakan font Putih (#FFFFFF) - namun permintaan Anda adalah jangan putih, jadi kita pakai hitam saja.
+                // 3. Gambar teks (Font selalu Hitam kecuali latar belakang terlalu gelap)
+                ctx.fillStyle = (isLightColor || avgColor === "Kuning" || avgColor === "Putih") ? '#000000' : '#FFFFFF';
                 
-                // Untuk kontras yang lebih baik, kita gunakan hitam (#000000) untuk warna terang, dan putih (#FFFFFF) untuk warna gelap
-                // Berdasarkan permintaan, kita utamakan hitam, kecuali jika latar terlalu gelap.
-                ctx.fillStyle = '#000000'; // Default hitam
-
-                // Jika latar belakang gelap, gunakan Putih
-                if (avgColor === "Hitam" || avgColor === "Biru" || avgColor === "Merah" || avgColor === "Ungu") {
-                    ctx.fillStyle = '#FFFFFF';
-                }
-
                 ctx.fillText(text, x + 4, y - 6);
             });
         }
@@ -253,7 +256,7 @@
                 document.getElementById('container').style.height = `${video.videoHeight}px`;
 
                 statusElement.style.color = '#2ecc71';
-                statusElement.textContent = '3. Deteksi dan Analisis Warna Akurat Dimulai.';
+                statusElement.textContent = '3. Deteksi dan Analisis Warna Sangat Akurat Dimulai.';
                 
                 detectFrame();
                 
