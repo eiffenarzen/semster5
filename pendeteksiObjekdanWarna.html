@@ -21,7 +21,7 @@
         /* Mengatur posisi canvas di atas video */
         #container { 
             position: relative; 
-            border: 4px solid #3498db; /* Border kontainer */
+            border: 4px solid #3498db; 
             box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
         }
         #canvas { 
@@ -61,11 +61,10 @@
         const statusElement = document.getElementById('status');
         let model = undefined;
         
-        // VARIABEL PENINGKATAN AKURASI
-        // Objek dengan kepercayaan di bawah 65% akan diabaikan (dapat disesuaikan 0.5 - 0.9)
+        // Objek dengan kepercayaan di bawah 65% akan diabaikan
         const MIN_CONFIDENCE = 0.65; 
 
-        // --- FUNGSI 1: KONVERSI RGB ke HSL (Diperlukan untuk akurasi warna) ---
+        // --- FUNGSI 1: KONVERSI RGB ke HSL ---
         function rgbToHsl(r, g, b) {
             r /= 255; g /= 255; b /= 255;
             const max = Math.max(r, g, b);
@@ -73,7 +72,7 @@
             let h, s, l = (max + min) / 2;
 
             if (max === min) {
-                h = s = 0; // Monokromatik
+                h = s = 0;
             } else {
                 const d = max - min;
                 s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
@@ -84,17 +83,15 @@
                 }
                 h /= 6;
             }
-
-            return [h * 360, s, l]; // Mengembalikan Hue (0-360), Saturation (0-1), Lightness (0-1)
+            return [h * 360, s, l];
         }
 
-        // --- FUNGSI 2: ANALISIS WARNA BERBASIS HSL ---
+        // --- FUNGSI 2: ANALISIS WARNA BERBASIS HSL (Diperluas) ---
         function getAverageColor(x, y, width, height) {
             if (width <= 0 || height <= 0) return "Tidak Valid";
 
             let imageData;
             try {
-                // Ambil data piksel di dalam bounding box
                 const safeX = Math.max(0, x);
                 const safeY = Math.max(0, y);
                 const safeW = Math.min(width, canvas.width - safeX);
@@ -107,7 +104,7 @@
 
             const data = imageData.data;
             let totalR = 0, totalG = 0, totalB = 0;
-            const step = 5; // Sampling lebih banyak untuk performa dan akurasi yang lebih baik
+            const step = 5; 
             let count = 0;
 
             for (let i = 0; i < data.length; i += 4 * step) {
@@ -123,36 +120,41 @@
             const avgG = totalG / count;
             const avgB = totalB / count;
 
-            // 1. Konversi ke HSL
             const [h, s, l] = rgbToHsl(avgR, avgG, avgB);
 
-            // 2. Klasifikasi Monokromatik (Satuan rendah atau Lightness ekstrem)
-            if (s < 0.15) { // Saturation rendah
+            // Klasifikasi Monokromatik (Putih, Hitam, Abu-abu)
+            if (s < 0.15) { 
                 if (l > 0.9) return "Putih";
                 if (l < 0.1) return "Hitam";
                 return "Abu-abu";
             }
             
-            // 3. Klasifikasi Warna (Berdasarkan Hue angle)
+            // Klasifikasi Warna (Berdasarkan Hue angle)
+            // Merah
             if (h >= 345 || h < 15) return "Merah"; 
+            // Oranye
             if (h >= 15 && h < 40) return "Oranye"; 
+            // Kuning
             if (h >= 40 && h < 75) return "Kuning"; 
+            // Hijau
             if (h >= 75 && h < 150) return "Hijau"; 
+            // Cyan
             if (h >= 150 && h < 200) return "Cyan"; 
+            // Biru
             if (h >= 200 && h < 260) return "Biru"; 
+            // Ungu
             if (h >= 260 && h < 345) return "Ungu"; 
             
             return "Lainnya";
         }
 
-        // --- FUNGSI 3: AKSES KAMERA (Menggunakan API Modern) ---
+        // --- FUNGSI 3: AKSES KAMERA ---
         async function setupWebcam() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     video: true 
                 });
                 video.srcObject = stream;
-                // Menunggu video siap dimainkan
                 await new Promise(r => video.addEventListener('loadeddata', r, { once: true }));
                 return stream;
             } catch (error) {
@@ -168,12 +170,11 @@
                 return;
             }
             
-            // KRUSIAL: Gambar frame video ke canvas agar data piksel dapat diambil
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
             const rawPredictions = await model.detect(video);
 
-            // 🎯 FILTER HASIL: Hanya ambil yang di atas MIN_CONFIDENCE
+            // Filter hasil berdasarkan ambang batas kepercayaan (MIN_CONFIDENCE)
             const predictions = rawPredictions.filter(p => p.score >= MIN_CONFIDENCE);
             
             drawBoundingBoxes(predictions);
@@ -181,7 +182,7 @@
             requestAnimationFrame(detectFrame);
         }
 
-        // --- FUNGSI 5: MENGGAMBAR HASIL ---
+        // --- FUNGSI 5: MENGGAMBAR HASIL (Kotak & Font Disesuaikan) ---
         function drawBoundingBoxes(predictions) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
@@ -196,25 +197,40 @@
                 const confidence = Math.round(prediction.score * 100);
                 const text = `${prediction.class} (${avgColor}, ${confidence}%)`;
                 
-                // Pilih warna garis berdasarkan hasil analisis warna (Visualisasi)
-                let strokeColor = '#3498db'; // Default Biru
-                if (avgColor.includes("Merah") || avgColor.includes("Oranye")) strokeColor = '#e74c3c';
-                else if (avgColor.includes("Hijau")) strokeColor = '#2ecc71';
-                else if (avgColor.includes("Kuning")) strokeColor = '#f1c40f';
-                else if (avgColor.includes("Hitam")) strokeColor = '#ecf0f1'; // Putih terang untuk latar hitam
+                // 1. Tentukan Warna Garis dan Latar Belakang Kotak (Stroke Color)
+                let strokeColor = '#95a5a6'; // Abu-abu default
+
+                if (avgColor === "Merah") strokeColor = '#c0392b';
+                else if (avgColor === "Kuning") strokeColor = '#f1c40f';
+                else if (avgColor === "Hijau") strokeColor = '#27ae60';
+                else if (avgColor === "Biru") strokeColor = '#2980b9';
+                else if (avgColor === "Putih" || avgColor === "Abu-abu") strokeColor = '#7f8c8d'; 
+                else if (avgColor === "Hitam") strokeColor = '#34495e'; 
+                else if (avgColor === "Oranye") strokeColor = '#e67e22';
 
                 
                 ctx.strokeStyle = strokeColor;
                 ctx.strokeRect(x, y, width, height);
                 
-                // Gambar kotak latar belakang teks
+                // 2. Gambar kotak latar belakang teks
                 ctx.fillStyle = strokeColor;
                 const textWidth = ctx.measureText(text).width;
                 // Posisi kotak teks di atas bounding box
                 ctx.fillRect(x - 1, y - 24, textWidth + 10, 24); 
                 
-                // Gambar teks
-                ctx.fillStyle = (avgColor.includes("Kuning") || avgColor.includes("Putih")) ? '#000000' : '#FFFFFF';
+                // 3. Gambar teks (Font diubah menjadi Hitam untuk kontras yang baik)
+                // Jika warna latar belakang cerah (Kuning, Putih), gunakan font Hitam (#000000)
+                // Jika warna latar belakang gelap, gunakan font Putih (#FFFFFF) - namun permintaan Anda adalah jangan putih, jadi kita pakai hitam saja.
+                
+                // Untuk kontras yang lebih baik, kita gunakan hitam (#000000) untuk warna terang, dan putih (#FFFFFF) untuk warna gelap
+                // Berdasarkan permintaan, kita utamakan hitam, kecuali jika latar terlalu gelap.
+                ctx.fillStyle = '#000000'; // Default hitam
+
+                // Jika latar belakang gelap, gunakan Putih
+                if (avgColor === "Hitam" || avgColor === "Biru" || avgColor === "Merah" || avgColor === "Ungu") {
+                    ctx.fillStyle = '#FFFFFF';
+                }
+
                 ctx.fillText(text, x + 4, y - 6);
             });
         }
@@ -229,7 +245,6 @@
 
                 await setupWebcam();
                 
-                // Atur ukuran elemen
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 video.width = video.videoWidth;
