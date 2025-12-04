@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deteksi Objek & Warna Real-Time - TensorFlow.js</title>
+    <title>Deteksi Objek & Warna Akurat - TensorFlow.js</title>
     
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
@@ -15,14 +15,14 @@
             flex-direction: column; 
             align-items: center; 
             font-family: sans-serif; 
-            background-color: #f0f0f0;
+            background-color: #f4f4f4;
         }
-        h1 { color: #333; }
+        h1 { color: #2c3e50; }
         /* Mengatur posisi canvas di atas video */
         #container { 
             position: relative; 
-            border: 4px solid #4CAF50; /* Border kontainer */
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            border: 4px solid #3498db; /* Border kontainer */
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
         }
         #canvas { 
             position: absolute; 
@@ -30,21 +30,22 @@
             left: 0; 
         }
         #webcam {
-            display: block; /* Menghilangkan spasi di bawah video */
+            display: block;
         }
         #status { 
             margin-top: 15px; 
             font-weight: bold; 
-            color: #d9534f; 
+            color: #e74c3c; 
             padding: 10px;
             background-color: #fff;
             border-radius: 5px;
+            text-align: center;
         }
     </style>
 </head>
 <body>
 
-    <h1>Deteksi Objek & Warna Real-Time 🎨</h1>
+    <h1>Deteksi Objek & Warna Akurat (HSL) 🎯</h1>
     
     <div id="container">
         <video id="webcam" autoplay muted playsinline></video>
@@ -59,22 +60,41 @@
         const ctx = canvas.getContext('2d');
         const statusElement = document.getElementById('status');
         let model = undefined;
+        
+        // VARIABEL PENINGKATAN AKURASI
+        // Objek dengan kepercayaan di bawah 65% akan diabaikan (dapat disesuaikan 0.5 - 0.9)
+        const MIN_CONFIDENCE = 0.65; 
 
-        // --- FUNGSI ANALISIS WARNA ---
-        /**
-         * Menganalisis dan mengembalikan string nama warna rata-rata berdasarkan nilai RGB.
-         * @param {number} x, y, width, height - Bounding box area.
-         * @returns {string} Nama warna rata-rata.
-         */
+        // --- FUNGSI 1: KONVERSI RGB ke HSL (Diperlukan untuk akurasi warna) ---
+        function rgbToHsl(r, g, b) {
+            r /= 255; g /= 255; b /= 255;
+            const max = Math.max(r, g, b);
+            const min = Math.min(r, g, b);
+            let h, s, l = (max + min) / 2;
+
+            if (max === min) {
+                h = s = 0; // Monokromatik
+            } else {
+                const d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                switch (max) {
+                    case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                    case g: h = (b - r) / d + 2; break;
+                    case b: h = (r - g) / d + 4; break;
+                }
+                h /= 6;
+            }
+
+            return [h * 360, s, l]; // Mengembalikan Hue (0-360), Saturation (0-1), Lightness (0-1)
+        }
+
+        // --- FUNGSI 2: ANALISIS WARNA BERBASIS HSL ---
         function getAverageColor(x, y, width, height) {
-            // Kita mengambil data dari ctx yang telah digambar di detectFrame()
-            
-            // Perlu memastikan lebar dan tinggi tidak nol atau negatif
             if (width <= 0 || height <= 0) return "Tidak Valid";
 
             let imageData;
             try {
-                // Ambil data piksel di dalam bounding box (pastikan area tidak keluar batas canvas)
+                // Ambil data piksel di dalam bounding box
                 const safeX = Math.max(0, x);
                 const safeY = Math.max(0, y);
                 const safeW = Math.min(width, canvas.width - safeX);
@@ -82,13 +102,12 @@
                 
                 imageData = ctx.getImageData(safeX, safeY, safeW, safeH);
             } catch (e) {
-                console.warn("Gagal mendapatkan data piksel:", e);
                 return "Warna?";
             }
 
             const data = imageData.data;
             let totalR = 0, totalG = 0, totalB = 0;
-            const step = 10; // Sampling untuk performa
+            const step = 5; // Sampling lebih banyak untuk performa dan akurasi yang lebih baik
             let count = 0;
 
             for (let i = 0; i < data.length; i += 4 * step) {
@@ -104,40 +123,37 @@
             const avgG = totalG / count;
             const avgB = totalB / count;
 
-            // Klasifikasi warna sederhana
-            if (avgR > 180 && avgG < 100 && avgB < 100) return "Merah"; 
-            if (avgR < 100 && avgG > 180 && avgB < 100) return "Hijau"; 
-            if (avgR < 100 && avgG < 100 && avgB > 180) return "Biru"; 
-            
-            // Monokromatik (Abu-abu, Putih, Hitam)
-            const luminance = 0.299 * avgR + 0.587 * avgG + 0.114 * avgB;
-            if (luminance > 230) return "Putih";
-            if (luminance < 30) return "Hitam";
-            if (Math.abs(avgR - avgG) < 30 && Math.abs(avgR - avgB) < 30) return "Abu-abu";
+            // 1. Konversi ke HSL
+            const [h, s, l] = rgbToHsl(avgR, avgG, avgB);
 
-            // Warna campuran
-            if (avgR > 180 && avgG > 150 && avgB < 100) return "Kuning";
-            if (avgR > 150 && avgG < 100 && avgB > 150) return "Ungu";
-            if (avgR > 150 && avgG > 80 && avgB < 80) return "Oranye";
+            // 2. Klasifikasi Monokromatik (Satuan rendah atau Lightness ekstrem)
+            if (s < 0.15) { // Saturation rendah
+                if (l > 0.9) return "Putih";
+                if (l < 0.1) return "Hitam";
+                return "Abu-abu";
+            }
             
-            return "Coklat/Lainnya";
+            // 3. Klasifikasi Warna (Berdasarkan Hue angle)
+            if (h >= 345 || h < 15) return "Merah"; 
+            if (h >= 15 && h < 40) return "Oranye"; 
+            if (h >= 40 && h < 75) return "Kuning"; 
+            if (h >= 75 && h < 150) return "Hijau"; 
+            if (h >= 150 && h < 200) return "Cyan"; 
+            if (h >= 200 && h < 260) return "Biru"; 
+            if (h >= 260 && h < 345) return "Ungu"; 
+            
+            return "Lainnya";
         }
-        // ------------------------------------
 
-        /**
-         * 1. Mulai Akses Kamera (Menggunakan API Modern: mediaDevices)
-         */
+        // --- FUNGSI 3: AKSES KAMERA (Menggunakan API Modern) ---
         async function setupWebcam() {
             try {
-                // Gunakan navigator.mediaDevices.getUserMedia yang lebih modern
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     video: true 
                 });
                 video.srcObject = stream;
-                
                 // Menunggu video siap dimainkan
                 await new Promise(r => video.addEventListener('loadeddata', r, { once: true }));
-                
                 return stream;
             } catch (error) {
                 console.error("Gagal mendapatkan akses kamera:", error);
@@ -145,98 +161,89 @@
             }
         }
 
-        /**
-         * 2. Loop Deteksi Utama
-         */
+        // --- FUNGSI 4: LOOP DETEKSI UTAMA ---
         async function detectFrame() {
             if (video.readyState < 2 || !model) {
                 requestAnimationFrame(detectFrame);
                 return;
             }
             
-            // **KRUSIAL UNTUK ANALISIS WARNA:**
-            // Gambar frame video ke canvas agar data piksel dapat diambil (getImageData)
+            // KRUSIAL: Gambar frame video ke canvas agar data piksel dapat diambil
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            // Jalankan deteksi
-            const predictions = await model.detect(video);
+            const rawPredictions = await model.detect(video);
+
+            // 🎯 FILTER HASIL: Hanya ambil yang di atas MIN_CONFIDENCE
+            const predictions = rawPredictions.filter(p => p.score >= MIN_CONFIDENCE);
             
-            // Gambar kotak pembatas dan analisis warna
             drawBoundingBoxes(predictions);
 
-            // Ulangi proses pada frame berikutnya
             requestAnimationFrame(detectFrame);
         }
 
-        /**
-         * 3. Menggambar Hasil Deteksi (Kotak, Label, dan Warna)
-         */
+        // --- FUNGSI 5: MENGGAMBAR HASIL ---
         function drawBoundingBoxes(predictions) {
-            // Bersihkan canvas dari kotak pembatas frame sebelumnya
-            // Catatan: gambar video tetap ada karena sudah digambar di detectFrame()
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            ctx.font = '16px Arial';
-            ctx.lineWidth = 2;
+            ctx.font = '18px Arial'; 
+            ctx.lineWidth = 3; 
             
             predictions.forEach(prediction => {
                 const [x, y, width, height] = prediction.bbox;
                 
-                // Analisis warna rata-rata pada area objek
                 const avgColor = getAverageColor(x, y, width, height);
 
                 const confidence = Math.round(prediction.score * 100);
                 const text = `${prediction.class} (${avgColor}, ${confidence}%)`;
                 
-                // Pengaturan Gaya
-                const strokeColor = avgColor === "Merah" ? "#FF4136" : 
-                                    avgColor === "Biru" ? "#0074D9" : 
-                                    avgColor === "Hijau" ? "#2ECC40" : 
-                                    "#FFDC00"; // Kuning default
+                // Pilih warna garis berdasarkan hasil analisis warna (Visualisasi)
+                let strokeColor = '#3498db'; // Default Biru
+                if (avgColor.includes("Merah") || avgColor.includes("Oranye")) strokeColor = '#e74c3c';
+                else if (avgColor.includes("Hijau")) strokeColor = '#2ecc71';
+                else if (avgColor.includes("Kuning")) strokeColor = '#f1c40f';
+                else if (avgColor.includes("Hitam")) strokeColor = '#ecf0f1'; // Putih terang untuk latar hitam
+
                 
                 ctx.strokeStyle = strokeColor;
                 ctx.strokeRect(x, y, width, height);
                 
-                // Gambar latar belakang teks
+                // Gambar kotak latar belakang teks
                 ctx.fillStyle = strokeColor;
                 const textWidth = ctx.measureText(text).width;
-                ctx.fillRect(x, y, textWidth + 8, 20); 
+                // Posisi kotak teks di atas bounding box
+                ctx.fillRect(x - 1, y - 24, textWidth + 10, 24); 
                 
                 // Gambar teks
-                ctx.fillStyle = '#000000'; // Warna Teks Hitam
-                ctx.fillText(text, x + 4, y + 15);
+                ctx.fillStyle = (avgColor.includes("Kuning") || avgColor.includes("Putih")) ? '#000000' : '#FFFFFF';
+                ctx.fillText(text, x + 4, y - 6);
             });
         }
 
-        /**
-         * 4. Fungsi Utama untuk Memulai Aplikasi
-         */
+        // --- FUNGSI UTAMA UNTUK MEMULAI ---
         async function startApp() {
             try {
-                statusElement.textContent = '1. Memuat model COCO-SSD...';
-                // Muat model COCO-SSD
+                statusElement.textContent = `1. Memuat model COCO-SSD... (Confidence > ${MIN_CONFIDENCE * 100}%)`;
                 model = await cocoSsd.load();
+                statusElement.style.color = '#3498db';
                 statusElement.textContent = '2. Model berhasil dimuat. Meminta akses kamera...';
 
-                // Akses dan setel video
                 await setupWebcam();
                 
-                // Atur ukuran canvas dan video agar sinkron
+                // Atur ukuran elemen
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 video.width = video.videoWidth;
                 video.height = video.videoHeight;
-                // Tetapkan ukuran container agar sesuai
                 document.getElementById('container').style.width = `${video.videoWidth}px`;
                 document.getElementById('container').style.height = `${video.videoHeight}px`;
 
-
-                statusElement.textContent = '3. Deteksi dan Analisis Warna dimulai...';
+                statusElement.style.color = '#2ecc71';
+                statusElement.textContent = '3. Deteksi dan Analisis Warna Akurat Dimulai.';
                 
-                // Mulai loop deteksi
                 detectFrame();
                 
             } catch (error) {
-                // Tangani kesalahan, terutama kegagalan kamera/keamanan
+                statusElement.style.color = '#e74c3c';
                 statusElement.textContent = `❌ ERROR: ${error.message}. SILAKAN CEK KONTAK ATAU JALANKAN DI SERVER LOKAL.`;
                 console.error(error);
             }
